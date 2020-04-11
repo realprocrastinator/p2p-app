@@ -18,9 +18,9 @@ class message(object):
             # segment will be the data we want to transfer
             self.segment = segment
     
-    def setHeader(self,msg_type,val):
-        # msg_type is , val is
-        self.__msg[0:16] = int2byte(msg_type) + int2byte(val)
+    def setHeader(self,msg_type,peerid):
+        # msg_type is the header type defined in para.py
+        self.__msg[0:16] = int2byte(msg_type) + int2byte(peerid)
     
     @property
     def header(self):
