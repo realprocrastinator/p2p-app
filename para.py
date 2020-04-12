@@ -14,7 +14,8 @@ class header(Enum):
     # gracefully exit
     PEER_EXIT = 9
     PEER_EXIT_ACK = 10
-    PEER_JOIN = 11
+    PEER_LOST = 11
+    PEER_JOIN = 12
 
 def signal(x:Enum):
     return x.value

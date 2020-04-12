@@ -12,6 +12,7 @@ import os
 
 port_base = parameters()["PORT_BASE"]
 
+
 # interactive command handler
 class InputHandler(Thread):
     def __init__(self):
@@ -70,14 +71,40 @@ class EventHandler(object):
         # set up peer object
         self.peer = peer(self.my_id)
         self.myname = "peer_" + str(self.peer)
-        
+
+        # if we want to exit, we need to sync, use lock
+        # we can only exit gracesully when no one is asking us for
+        # info
+        # TODO exit params  
+        self.exit_approve = True
+        self.big_lock = Lock()
+
+        # parameters
+        self.no_ping = no_ping
+        self.peer_ids = peer_ids
+
+
+    # p2pjoin()
+    def p2pjoin(self):
+        myid = self.my_id
+        my_friend = uargs()["KNOWN_PEER"]
+        # open TCP and send to my_friend, then wait for reply
+
+        # if got reply then update the successors
+
+        # call p2pinit() to start journey
+
+
+
+    # p2pinit()
+    def p2pinit(self):
         # TODO skip if noping flag is set for debugging
-        if not no_ping:
+        if not self.no_ping:
             # add suc and ssuc to my peers 
             # init udp server
             # send ping info
             # if ping is successful is handled by ping
-            self.print_ping_who(peer_ids)
+            self.print_ping_who(self.peer_ids)
 
             # TODO need to be synced!
             self.workers = []
@@ -93,13 +120,6 @@ class EventHandler(object):
         # start to accept user input 
         InputHandler().start()
 
-        # if we want to exit, we need to sync, use lock
-        # we can only exit gracesully when no one is asking us for
-        # info
-        # TODO exit params  
-        self.exit_approve = True
-        self.big_lock = Lock()
-    
 
     # display sending msg
     def print_ping_who(self,suc: list):
@@ -142,8 +162,8 @@ class EventHandler(object):
     def join_me(self,peer_id):
         return self.peer.join_me(peer_id)
 
-    # p2pjoin()
-    def p2pjoin(self,peer_id):
+    # handle_join()
+    def handle_join(self,peer_id):
         # if peer will become my new suc then update get called
         # mean while disabling ping, after updating the peer.successors{}
         # then clean the enable ping
@@ -213,17 +233,17 @@ class EventHandler(object):
         self.workers = [w for w in self.workers if w.suc_id != quiter_id]
 
         # add a new worker for new suc
-        self.add_new_worker(order,new_suc)
+        self.handle_new_suc(order,new_suc)
 
         # display updating
-        self.print_successors()
+        
 
     # add a new worker for ping new suc
-    def add_new_worker(self,order:str,new_suc:int):
+    def handle_new_suc(self,order:str,new_suc:int):
         self.workers.append(self.add_suc(order,new_suc))
+        self.print_successors()
 
-
-    
+    # 
 
 def main():
     import sys
@@ -262,8 +282,12 @@ def main():
         uargs()["PING_TINTERVAL"] = int(sys.argv[5])
         
         # TODO call p2pinit()
+        uargs()["options"] = \
+                    EventHandler(uargs()["PEER_ID"],
+                                [uargs()["FIRST_SUCCESSOR"], uargs()["SECOND_SUCCESSOR"]],
+                                )
+        uargs()["options"].p2pinit()
         
-        pass
     
     elif uargs()["OPTIONS"] == "join":
 
@@ -280,8 +304,9 @@ def main():
         uargs()["KNOWN_PEER"] = int(sys.argv[3])    
         uargs()["PING_TINTERVAL"] = int(sys.argv[4])
         
-        # TODO call p2pjoin()
-        pass
+        # TODO call p2pjoin() at this moment all p2pinit not called until such peer knows where to join!
+        uargs()["options"] = EventHandler(uargs()["PEER_ID"],[])
+        uargs()["options"].p2pjoin()
     
     else:
         print("Unkonwn Command. Usage: prog <init|join> <args>")
