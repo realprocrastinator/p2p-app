@@ -29,7 +29,7 @@ class peer(object):
             print("I dont have such successor.")
 
     # rem pre
-    def rem_pre(self,order):
+    def rem_pre(self,order:str):
         self.pre_lock.acquire()
         try:
             del self.predecessor[order]
@@ -51,6 +51,17 @@ class peer(object):
     def get_myid(self):
         return self.my_id
 
+    # update successors
+    def suc_update(self,peer_id):
+        self.successor["second"] =  self.successor["first"]
+        self.successor["first"] = peer_id
+
+    # 
+    def print_successors(self):
+        suc1,suc2 = self.peer.successor["first"],self.peer.successor["second"]
+        print (f"My new first successor is Peer {str(suc1)}")
+        print (f"My new Second successor is Peer {str(suc2)}")
+
     # check if I should be responsible for such file
     # if yes then lookup my local file table
     def has_file(self,file_id):
@@ -69,11 +80,60 @@ class peer(object):
         return False
 
     # check if I should store such file
+    # check if whis peer will be my suc or not? join()
+    def join_me(self,peer_id):
+        suc_id = self.get_suc("first")
+        if self.my_id < suc_id:
+            # I'm not the peer with largest id
+            if peer_id > self.my_id and peer_id < suc_id:
+                return True
+            return False
+        elif self.my_id > suc_id:
+            # I'm the peer with the largest id
+            if peer_id > self.my_id:
+                return True
+            return False
 
 if __name__ == "__main__":
     
-    #test case
+    # test join 
+    # 1-2-3-4-5-1
+    p1 = peer(1)
+    p1.add_suc("first",2)
+    p1.add_suc("second",3)
     
+    p2 = peer(2)
+    p2.add_suc("first",3)
+    p2.add_suc("second",4)
+    
+    p3 = peer(3)
+    p3.add_suc("first",4)
+    p3.add_suc("second",5)
+
+    p4 = peer(4)
+    p4.add_suc("first",5)
+    p4.add_suc("second",1)
+    
+    p5 = peer(5)
+    p5.add_suc("first",1)
+    p5.add_suc("second",2)
+
+    # cant let it join
+    print("testing peer 10 ask 2 to join...")
+    if (not p2.join_me(10)):
+        print("PASS\n")
+    else:
+        print("FAIL\n")
+
+    # join me
+    print("testing peer 10 ask 5 to join...")
+    if (p5.join_me(10)):
+        print("PASS\n")
+    else:
+        print("FAIL\n")
+    
+
+    # test case 
     """
     test if only one peer
     """

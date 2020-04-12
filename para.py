@@ -6,6 +6,18 @@ class header(Enum):
     SND_PING = 1
     REQ_FILE = 2
     SND_FILE = 3
+    FILE_STR = 4
+    FILE_ACK = 5
+    FILE_REQ = 6
+    FILE_RCV = 7
+    NEW_PEER = 8
+    # gracefully exit
+    PEER_EXIT = 9
+    PEER_EXIT_ACK = 10
+    PEER_JOIN = 11
+
+def signal(x:Enum):
+    return x.value
 
 
 class parameters(dict):
@@ -42,4 +54,5 @@ class uargs(dict):
 
 
 if __name__ == "__main__":
-    print(repr(header.ACK_PING))
+    # print(repr(header.ACK_PING))
+    print(signal(header.ACK_PING))

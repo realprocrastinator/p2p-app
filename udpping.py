@@ -5,17 +5,13 @@ from para import *
 from msgtype import *
 
 host = parameters()["HOST_ADDR"]
-try: 
-    MYID = int(uargs()["PEER_ID"])
-except Exception:
-    # just for DEBUGGING
-    MYID = -1
 PORT_BASE = int(parameters()["PORT_BASE"])
-port = PORT_BASE + MYID
 try:
     PING_INTERVAL = int(uargs()["PING_INTERVAL"])
 except Exception:
     PING_INTERVAL = 5
+
+
 """
 a pingReceiver once received the package call
 update() method to update the predecessor and can 
@@ -26,7 +22,14 @@ class pingReceiver(Thread):
     def __init__(self,t_name:str):
         # give thread a name for easier debugging
         Thread.__init__(self,name=t_name)
-        
+                
+        try: 
+            self.__MYID = int(uargs()["PEER_ID"])
+        except Exception:
+            # just for DEBUGGING
+            self.__MYID = 3
+        port = PORT_BASE + self.__MYID
+
         # create a UDP socket, using IPv4 addr
         self.sock = socket(AF_INET,SOCK_DGRAM)
         # bind the socket to a port
@@ -39,16 +42,16 @@ class pingReceiver(Thread):
         # send the acknowledgment back
         
         # get the predecessor id from the msg and print out
-        pre_id = msg.header[1]
+        pre_id = msg.header[1] - PORT_BASE
         print(f"Ping request message received from Peer {str(pre_id)}")
 
         #TODO update the predecessor, call add predecessor
 
         # construct the ack msg
         ack_msg = message()
-        ack_msg.setHeader(header.ACK_PING.value,MYID)
+        ack_msg.setHeader(header.ACK_PING.value,self.__MYID)
 
-        self.sock.sendto(msg.segment,addr)
+        self.sock.sendto(ack_msg.segment,addr)
     
     def run(self):
         # waiting for the receiver buffer, once got the
@@ -78,7 +81,7 @@ if probability reaches threshold then a loss event occurs,
 it will call the update() method to update its successor
 """
 class pingSender(Thread):
-    def __init__(self,t_name:str,peer_id:int):
+    def __init__(self,t_name:str,suc_id:int):
         Thread.__init__(self)
         
         # each timeout will reduce the rivival chance by 1, 
@@ -92,18 +95,29 @@ class pingSender(Thread):
         self.sock.settimeout(1)
 
         # send to who?
-        self.peer_id = peer_id
+        self.suc_id = suc_id
+
+        # whoam i?
+        try: 
+            self.__MYID = int(uargs()["PEER_ID"])
+        except Exception:
+            # just for DEBUGGING
+            self.__MYID = 3
+
 
     def sendPing(self,chance:int):
         if chance == 0:
             #TODO suc died, call update()
-            print(f"peer{self.peer_id} is lost, updating successors...")
+            print(f"peer{self.suc_id} is lost, updating successors...")
+        elif self.__stop:
+            # at thi smoment I'm updatding my successsors dont send ping until I enable it again
+            pass 
         else:
             # construct the message
             ping_msg = message()
-            ping_msg.setHeader(header.SND_PING.value,PORT_BASE + self.peer_id)
+            ping_msg.setHeader(header.SND_PING.value,PORT_BASE + self.__MYID)
             # send the ping
-            self.sock.sendto(ping_msg.segment,(host,PORT_BASE+self.peer_id))
+            self.sock.sendto(ping_msg.segment,(host,PORT_BASE+self.suc_id))
             try:
                 # wait for reply, if timeout, reduce chance and try again
                 ack_data, addr =  self.sock.recvfrom(2048)
@@ -125,13 +139,17 @@ class pingSender(Thread):
                 # reduce the chance by one and try again
                 self.sendPing(chance - 1)
 
-    # TODO add a stop method for debugging
+    # disable ping when updating the suc table
+    def disable_ping(self):
+        self.__stop = True
 
     def run(self):
         # TODO is that enough?
+        self.__stop = False
         # actually the periodically sending ping request
         # can be done in a higher level
-        self.sendPing(3)
+        while True:
+            self.sendPing(3)
 
 
 
@@ -139,12 +157,18 @@ class pingSender(Thread):
 
 
 if __name__ == "__main__":
-    MYID = uargs()["PEER_ID"] = 2
-    print(header.ACK_PING.value)
-    print(MYID)
-    pingReceiver("PingReceiver").start()
-    MYID = 3
-    pingSender("PingSender",-1).start()
+    id1 = uargs()["PEER_ID"] = 2
+
+
+    print(f"p1 with id: {id1} is sending to p2")
+    pingReceiver("PingReceiver1").start()
+    pingSender("PingSender1",3).start()    
+    
+    id2 = uargs()["PEER_ID"] = 3
+    print(f"p2 with id: {id2} is sending to p1")
+    pingReceiver("PingReceiver2").start()
+    pingSender("PingSender1",2).start()
+
     print("main thread finished...")
     while True:
         sleep(0.1)

@@ -3,9 +3,14 @@ Jiawei Gao
 z5242283
 p2p network using DHT
 """
-from threading import Thread
+from threading import Thread, Timer, Lock
 from para import parameters,uargs
+from udpping import *
+from peers import *
+from actions import *
 import os
+
+port_base = parameters()["PORT_BASE"]
 
 # interactive command handler
 class InputHandler(Thread):
@@ -59,10 +64,12 @@ class InputHandler(Thread):
 
 # handle different envents
 class EventHandler(object):
-    def __init__(self,id : int, peers : list, no_ping = False):
+    def __init__(self,id : int, peer_ids : list, no_ping = False):
         self.my_id = id
         
-        # TODO set up peer object
+        # set up peer object
+        self.peer = peer(self.my_id)
+        self.myname = "peer_" + str(self.peer)
         
         # TODO skip if noping flag is set for debugging
         if not no_ping:
@@ -70,16 +77,153 @@ class EventHandler(object):
             # init udp server
             # send ping info
             # if ping is successful is handled by ping
-            pass
+            self.print_ping_who(peer_ids)
+
+            # TODO need to be synced!
+            self.workers = []
+            self.workers.append(self.add_suc("First",peer_ids[0]))
+            self.workers.append(self.add_suc("Second",peer_ids[1]))           
+            # TODO start the TCP receiver to handle the request
+
+        
+        # start udp ping server to receive the ping msg
+        self.pingrcvr = pingReceiver(self.myname + "_pingrcvr")
+        self.pingrcvr.start()
+
+        # start to accept user input 
+        InputHandler().start()
+
+        # if we want to exit, we need to sync, use lock
+        # we can only exit gracesully when no one is asking us for
+        # info
+        # TODO exit params  
+        self.exit_approve = True
+        self.big_lock = Lock()
     
-    #start to accept user input 
-    InputHandler().run()
 
-    # if we want to exit, we need to sync, use lock
-    # we can only exit gracesully when no one is asking us for
-    # info
-    # TODO exit params  
+    # display sending msg
+    def print_ping_who(self,suc: list):
+        suc1, suc2 = suc[0],suc[1]
+        print(f"Ping requests sent to Peers {suc1} and {suc2}")
 
+    # function to send ping package and add successor
+    def add_suc(self,order:str,peer_id:int):
+        self.peer.add_suc(order,peer_id)
+        # start the ping worker and send the ping to the successor
+        worker = pingSender(self.myname + "pingSender",peer_id)
+        worker.start()
+        return worker
+
+    # wrapping function to get the suc if no successor yet return NULL 
+    def get_suc(self,order:str):
+        suc = self.peer.get_suc(order)
+        if not suc:
+            print("I have no successor yet")
+            return
+        return suc
+
+    # wrapping function to get the pre if no pre return NULL
+    def get_pre(self,order:str):
+        pre = self.peer.get_pre(order)
+        if not pre:
+            print("I have no predecessor yet")
+            return
+        return pre
+
+    # display successors
+    def print_successors(self):
+        self.peer.print_successors
+
+    # update the successors when join() get called 
+    def suc_update(self,peer_id):
+        self.suc_update(peer_id)
+    
+    # check if should join me
+    def join_me(self,peer_id):
+        return self.peer.join_me(peer_id)
+
+    # p2pjoin()
+    def p2pjoin(self,peer_id):
+        # if peer will become my new suc then update get called
+        # mean while disabling ping, after updating the peer.successors{}
+        # then clean the enable ping
+        if join_me(peer_id):
+            # disable ping
+            for worker in self.workers:
+                worker.disable_ping()
+
+            # TODO grab the lock!
+            # update my successors table 
+            self.suc_update(peer_id)
+            
+            # TODO tell my predecessor
+            # wrap my_suc_id and send to pre to update his sec suc
+            
+            pass
+        # otherwise  forward to my successor, tell him peer wants to join 
+        else:
+            # TODO tell my suc peer wants to join
+            pass
+
+    # peer is leaving the p2p network gracefully
+    def peer_quit(self):
+        # disable the ping
+        for w in self.workers:
+            w.disable_ping()
+        
+        # close the udp socket
+        close(self.pingrcvr.sock)
+
+        # TODO notice my predecessors 
+        # tell them to update their successors
+
+    # this function is thread safe
+    def quit_allow(self):
+        # If my peers allow me to leave then I can leave
+        self.big_lock.acquire()
+        self.exit_approve += 1
+        if self.exit_approve == 2:
+            # exit the thread
+            print("Bye.")
+            os._exit(0)
+        self.big_lock.release()
+    
+        # TODO close TCP socket
+
+
+    # when got the suc exit signal then call this function to handle
+    # suc's departure
+    def handle_peer_quit(self, quiter_id:int,order:str,new_suc:int):
+        # display who is leaving
+        print(f"Peer {quiter_id} will depart from the network")
+        
+        # help func, first suc or second suc? 
+        def who(suc_id):
+            sucs = self.peer.successor
+            for k,v in sucs.items():
+                if v == suc_id:
+                    return k
+
+        # remove the exiting suc
+        self.peer.rem_suc(who(quiter_id))
+        
+        # disable ping such suc
+        [w.disable_ping() for w in self.workers if w.suc_id == quiter_id]
+        # update workers list
+        self.workers = [w for w in self.workers if w.suc_id != quiter_id]
+
+        # add a new worker for new suc
+        self.add_new_worker(order,new_suc)
+
+        # display updating
+        self.print_successors()
+
+    # add a new worker for ping new suc
+    def add_new_worker(self,order:str,new_suc:int):
+        self.workers.append(self.add_suc(order,new_suc))
+
+
+    
 
 def main():
     import sys
