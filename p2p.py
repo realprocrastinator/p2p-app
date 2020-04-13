@@ -4,7 +4,7 @@ z5242283
 p2p network using DHT
 """
 from threading import Thread, Timer, Lock
-from para import parameters,uargs
+from para import *
 from udpping import *
 from peers import *
 from actions import *
@@ -87,17 +87,29 @@ class EventHandler(object):
     # p2pjoin()
     def p2pjoin(self):
         myid = self.my_id
-        my_friend = uargs()["KNOWN_PEER"]
-        # open TCP and send to my_friend, then wait for reply
+        my_friend = int(uargs()["KNOWN_PEER"])
+        
+        # open TCP and send to my_friend, then wait for repy
+        # all the reply handled by InfoClient()
+        ser = InfoSer("TCPserver_join")
+        ser.start()
 
-        # if got reply then update the successors
+        InfoClient(
+            my_friend, signal(header.PEER_JOIN), 999 , requester_id = myid
+        ).start()
 
-        # call p2pinit() to start journey
+        # at this moment suc table is not ready
+        while(not (self.peer_ids[0] and self.peer_ids[1])):
+            continue
+        
+        self.p2pinit(join = True)
+
+
 
 
 
     # p2pinit()
-    def p2pinit(self):
+    def p2pinit(self,join = False):
         # TODO skip if noping flag is set for debugging
         if not self.no_ping:
             # add suc and ssuc to my peers 
@@ -108,11 +120,14 @@ class EventHandler(object):
 
             # TODO need to be synced!
             self.workers = []
-            self.workers.append(self.add_suc("First",peer_ids[0]))
-            self.workers.append(self.add_suc("Second",peer_ids[1]))           
-            # TODO start the TCP receiver to handle the request
+            self.workers.append(self.add_suc("first",self.peer_ids[0]))
+            self.workers.append(self.add_suc("second",self.peer_ids[1])) 
+            self.print_successors()
 
-        
+            # TODO start the TCP receiver to handle the request
+            if not join:
+                InfoSer("TCPServer").start()
+
         # start udp ping server to receive the ping msg
         self.pingrcvr = pingReceiver(self.myname + "_pingrcvr")
         self.pingrcvr.start()
@@ -126,13 +141,22 @@ class EventHandler(object):
         suc1, suc2 = suc[0],suc[1]
         print(f"Ping requests sent to Peers {suc1} and {suc2}")
 
-    # function to send ping package and add successor
+    # function to send ping package and add successor TODO sync
     def add_suc(self,order:str,peer_id:int):
         self.peer.add_suc(order,peer_id)
         # start the ping worker and send the ping to the successor
-        worker = pingSender(self.myname + "pingSender",peer_id)
-        worker.start()
+        if order =="first":
+            worker = pingSender(self.myname + "pingSender",peer_id)
+            worker.start()
+        else:
+            worker = pingSender(self.myname + "pingSender",peer_id,first_suc = False)
+            worker.start()
         return worker
+
+
+    # add predecessor TODO sync
+    def add_pre(self,order:str,peer_id:int):
+        self.peer.add_pre(order,peer_id)
 
     # wrapping function to get the suc if no successor yet return NULL 
     def get_suc(self,order:str):
@@ -152,11 +176,11 @@ class EventHandler(object):
 
     # display successors
     def print_successors(self):
-        self.peer.print_successors
+        self.peer.print_successors()
 
     # update the successors when join() get called 
-    def suc_update(self,peer_id):
-        self.suc_update(peer_id)
+    def suc_update(self,peer_id,action = None):
+        self.peer.suc_update(peer_id,action)
     
     # check if should join me
     def join_me(self,peer_id):
@@ -167,23 +191,52 @@ class EventHandler(object):
         # if peer will become my new suc then update get called
         # mean while disabling ping, after updating the peer.successors{}
         # then clean the enable ping
-        if join_me(peer_id):
+        if self.join_me(peer_id):
+            old_suc,old_ssuc = self.get_suc("first"),self.get_suc("second")
+            
+            # DEBUG
+            # print(old_suc,old_ssuc)
+            
             # disable ping
             for worker in self.workers:
                 worker.disable_ping()
 
             # TODO grab the lock!
-            # update my successors table 
+            # update my successors table
+            print(f"Peer {peer_id} Join request received") 
             self.suc_update(peer_id)
+            self.print_successors()
             
             # TODO tell my predecessor
             # wrap my_suc_id and send to pre to update his sec suc
+            InfoClient(
+                self.peer.get_pre("first"), signal(header.JOIN_UPDATE), self.peer.get_suc("first")
+            ).start()
+
+            # send my info to my new suc, 1 indicates thats fisrt suc
+            InfoClient(
+                peer_id, signal(header.JOIN_ALLOWED), old_suc , requester_id = 1
+            ).start()
+
+            InfoClient(
+                peer_id, signal(header.JOIN_ALLOWED), old_ssuc , requester_id = 2
+            ).start()            
+
+            # enable ping
+            for worker in self.workers:
+                worker.enable_ping()             
             
-            pass
         # otherwise  forward to my successor, tell him peer wants to join 
         else:
             # TODO tell my suc peer wants to join
-            pass
+            suc = self.get_suc("first")
+            me = self.my_id
+            print(f"Peer {peer_id} Join request forwarded to my successor {suc}")
+            
+            # set header equals peer_id so that the successful msg will send to peer 
+            InfoClient(
+                self.get_suc("first"), signal(header.PEER_JOIN), me , requester_id= peer_id 
+            ).start()           
 
     # peer is leaving the p2p network gracefully
     def peer_quit(self):
@@ -234,8 +287,6 @@ class EventHandler(object):
 
         # add a new worker for new suc
         self.handle_new_suc(order,new_suc)
-
-        # display updating
         
 
     # add a new worker for ping new suc
@@ -243,13 +294,12 @@ class EventHandler(object):
         self.workers.append(self.add_suc(order,new_suc))
         self.print_successors()
 
-    # 
 
 def main():
     import sys
 
     if len(sys.argv) < 5:
-        print("""Usage: p2p <init|join>   
+        print("""Usage: p2p <init|join>  
                             <PEER> 
                             <FIRST_SUCCESSOR|KOWN_SUCCESSOR>
                             <SECOND_SUCCESSOR>
@@ -258,11 +308,11 @@ def main():
         exit(1);
 
     # support multi windows 
-    if sys.argv[0] == "python3":
-        sys.argv.pop(0);
+    # if sys.argv[0] == "python3":
+    #     sys.argv.pop(0);
 
     uargs()["OPTIONS"] = sys.argv[1]
-    uargs()["PEER_ID"] = sys.argv[2]
+    uargs()["PEER_ID"] = int(sys.argv[2])
     
     if str(uargs()["OPTIONS"]).lower() == "init":
         
@@ -282,11 +332,11 @@ def main():
         uargs()["PING_TINTERVAL"] = int(sys.argv[5])
         
         # TODO call p2pinit()
-        uargs()["options"] = \
+        uargs()["OPTIONS"] = \
                     EventHandler(uargs()["PEER_ID"],
                                 [uargs()["FIRST_SUCCESSOR"], uargs()["SECOND_SUCCESSOR"]],
                                 )
-        uargs()["options"].p2pinit()
+        uargs()["OPTIONS"].p2pinit()
         
     
     elif uargs()["OPTIONS"] == "join":
@@ -305,10 +355,12 @@ def main():
         uargs()["PING_TINTERVAL"] = int(sys.argv[4])
         
         # TODO call p2pjoin() at this moment all p2pinit not called until such peer knows where to join!
-        uargs()["options"] = EventHandler(uargs()["PEER_ID"],[])
-        uargs()["options"].p2pjoin()
+        uargs()["OPTIONS"] = EventHandler(uargs()["PEER_ID"],[None,None])
+        uargs()["OPTIONS"].p2pjoin()
     
     else:
+        for i in range(len(sys.argv)):
+            print(sys.argv[i])
         print("Unkonwn Command. Usage: prog <init|join> <args>")
         exit(1)
 

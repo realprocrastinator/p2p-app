@@ -16,10 +16,16 @@ class header(Enum):
     PEER_EXIT_ACK = 10
     PEER_LOST = 11
     PEER_JOIN = 12
+    JOIN_UPDATE = 13
+    JOIN_ALLOWED = 14
 
 def signal(x:Enum):
     return x.value
 
+@unique
+class signature(Enum):
+    FIRST = 0
+    SECOND = 1
 
 class parameters(dict):
     """

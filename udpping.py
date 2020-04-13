@@ -46,6 +46,11 @@ class pingReceiver(Thread):
         print(f"Ping request message received from Peer {str(pre_id)}")
 
         #TODO update the predecessor, call add predecessor
+        who = byte2int(msg.body)
+        if who == signal(signature.FIRST):
+            uargs()["OPTIONS"].add_pre("first",pre_id)
+        elif who == signal(signature.SECOND):
+            uargs()["OPTIONS"].add_pre("second",pre_id)
 
         # construct the ack msg
         ack_msg = message()
@@ -81,7 +86,7 @@ if probability reaches threshold then a loss event occurs,
 it will call the update() method to update its successor
 """
 class pingSender(Thread):
-    def __init__(self,t_name:str,suc_id:int):
+    def __init__(self,t_name:str,suc_id:int,first_suc = True):
         Thread.__init__(self)
         
         # each timeout will reduce the rivival chance by 1, 
@@ -96,6 +101,7 @@ class pingSender(Thread):
 
         # send to who?
         self.suc_id = suc_id
+        self.first_suc = first_suc
 
         # whoam i?
         try: 
@@ -104,6 +110,8 @@ class pingSender(Thread):
             # just for DEBUGGING
             self.__MYID = 3
 
+    def change_suc(self,new_suc):
+        self.suc_id = new_suc
 
     def sendPing(self,chance:int):
         if chance == 0:
@@ -116,6 +124,12 @@ class pingSender(Thread):
             # construct the message
             ping_msg = message()
             ping_msg.setHeader(header.SND_PING.value,PORT_BASE + self.__MYID)
+            # add signature to inform to the relationship 
+            if self.first_suc:
+                ping_msg.body = int2byte(signal(signature.FIRST))
+            else:
+                ping_msg.body = int2byte(signal(signature.SECOND))
+
             # send the ping
             self.sock.sendto(ping_msg.segment,(host,PORT_BASE+self.suc_id))
             try:
@@ -127,7 +141,7 @@ class pingSender(Thread):
                 if msg.header[0] == header.ACK_PING.value:
                     suc_id = msg.header[1]
                     print(f"Ping response received from Peer {suc_id}")
-
+                    uargs()["OPTIONS"].print_successors()
                     # Since our successor is alive lets wait for a while
                     # and resend the ping
                     sleep(PING_INTERVAL) 
@@ -142,6 +156,10 @@ class pingSender(Thread):
     # disable ping when updating the suc table
     def disable_ping(self):
         self.__stop = True
+
+    # enable
+    def enable_ping(self):
+        self.__stop = False   
 
     def run(self):
         # TODO is that enough?

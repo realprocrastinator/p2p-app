@@ -65,3 +65,6 @@ if __name__ == "__main__":
     recv = message( msg.segment)
     print(recv.header)
     print(recv.body)
+
+    msg.body = int2byte(0)
+    print(byte2int(msg.body)) 

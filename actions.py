@@ -17,7 +17,6 @@ host = parameters()["HOST_ADDR"]
 PORT_BASE = int(parameters()["PORT_BASE"])
 
 
-
 """
 rev from the other peers request, and handle the request 
 """
@@ -26,19 +25,82 @@ class Actors(Thread):
         Thread.__init__(self,name = t_name)
         self.conn = conn
         self.addr = addr
+        # DEBUG
+        self.id = t_name
+
     def run(self):
         # get the msg from buffer
         msg = self.conn.recv(2048)
         # decode the msg
-        action = message(msg).header[0]
-        peer_id = message(msg).header[1]
+        msg = message(msg)
+        peer_id = msg.header[1]
+        action = msg.header[0]    
         # accessing swicth table and handle the event
         
-        # peer join
-        if action == signal(header.PEER_JOIN):
-            # call Eventhandler
-            pass
-        # peer departure
+        handler = uargs()["OPTIONS"]
+        
+        # DEBUG
+        # handler = uargs()["HANDLERS" + self.id[-1]]
+
+        # peer join actions, JOIN_UPDATE indicates I'm told to
+        # renew my second successor as the joined peer
+        if action == signal(header.JOIN_UPDATE):
+            print("Successor Change request received")
+            # update the second suc of me
+            new_suc = byte2int(msg.body)
+            
+            # DEBUG
+            # print("NEW SUC IS:",new_suc)
+            
+            # disable the ping to sec suc
+            for w in handler.workers:
+                if w.suc_id == handler.get_suc("second"):
+                    w.disable_ping()
+
+            # TODO grab the lock
+            # call Eventhandlerto handle update with flag since I'm a predecessor
+            handler.suc_update(new_suc,action)
+            # display my new successors
+            handler.print_successors()
+
+            # enable the ping
+            for w in handler.workers:
+                if w.suc_id == handler.get_suc("second"):
+                    w.disable_ping()
+                    w.change_suc(new_suc)
+                    w.start()
+        
+        # PEER_JOIN signal indicates that I need to renew my suc and sec suc
+        elif action == signal(header.PEER_JOIN):
+            # DEBUG
+            # print("I'm peer" + self.id[-1])
+            handler.handle_join(peer_id)
+
+        # JOIN_ALLOWED indicates we can update our suc now, dont forget reply finish
+        # and call p2pinit()!
+        elif action == signal(header.JOIN_ALLOWED):
+            print("Join request has been accepted")
+            indicator = msg.header[1]
+            handler.big_lock.acquire()
+            if indicator == 1:
+                # set first suc
+                handler.peer_ids[0] = byte2int(msg.body)
+                print(f"My first successor is Peer {handler.peer_ids[0]}")
+            elif indicator == 2:
+                # set second suc
+                handler.peer_ids[1] = byte2int(msg.body)
+                print(f"My Second successor is Peer {handler.peer_ids[1]}")
+                # DEBUG
+                # print("INFO:" + "indicator:" ,indicator, byte2int(msg.body))
+            else:
+                # DEBUG
+                print("ERROR:" + "indicator:" ,indicator, byte2int(msg.body))
+            handler.big_lock.release()
+            # inform predecessor finishing updating
+            # start ping service
+            # handler.p2pinit(join = True)
+
+        # peer departure    
 
         # peer lost
 
@@ -51,7 +113,7 @@ class Actors(Thread):
 
 
 # a TCP server listening for incoming request
-class TCPSer(Thread):
+class InfoSer(Thread):
     def __init__(self,t_name):
         Thread.__init__(self,name = t_name)
         self.sock = socket(AF_INET,SOCK_STREAM)
@@ -62,12 +124,12 @@ class TCPSer(Thread):
             self.myid = 2
         self.sock.bind((host,PORT_BASE + self.myid))
         self.sock.listen(5)
-    
     def run(self):
         while True:
             # accept the new incoming connection
             conn,addr = self.sock.accept()
-            Actors(conn,addr).start()
+            Actors("Actor" + str(self.myid),conn,addr).start()
+
 
 # a TCP client for sending 
 class InfoClient(Thread):
@@ -91,6 +153,9 @@ class InfoClient(Thread):
         msg = message()
         msg.setHeader(self.info_type, self.requester_id)
         msg.body = int2byte(self.info_val)
+
+        # DEBUG
+        # print("sending..." + f"{msg.body}")
         # send the message 
         self.sock.send(msg.segment)
         # some cases we need to wait response and do callback 
@@ -99,12 +164,56 @@ class InfoClient(Thread):
             if msg.header[0] == signal(header.PEER_EXIT_ACK):
                 # exit granted
                 # callback the controller 
-                uargs()["options"].handle_peer_quit()
+                uargs()["OPTIONS"].handle_peer_quit()
             elif msg.header[0] == signal(header.NEW_PEER):
                 # register new peer
-                uargs()["options"].hanlde_new_sus(
+                uargs()["OPTIONS"].hanlde_new_sus(
                     byte2int(msg.body)
                 )
 
         # close the connection
         self.sock.close()
+
+if __name__ == "__main__":
+    # test TCP info client and Rceiver
+    from p2p import *
+    # test join info
+    
+    def debug_set(id,suc1 = None, suc2 = None,interval = 30,known = None):
+        uargs()["PEER_ID"] = id
+        uargs()["FIRST_SUCCESSOR"], uargs()["SECOND_SUCCESSOR"] = suc1,suc2
+        uargs()["PING_TINTERVAL"] = interval
+        uargs()["OPTIONS"] = EventHandler(uargs()["PEER_ID"],
+                                [uargs()["FIRST_SUCCESSOR"], uargs()["SECOND_SUCCESSOR"]],
+                                )
+        uargs()["HANDLERS" + str(id)] = uargs()["OPTIONS"]
+        uargs()["KNOWN_PEER"] = known
+        return uargs()["OPTIONS"]
+
+
+    # intial a peer 1
+    p1 = debug_set(1,suc1=2,suc2=3)
+    p2 = debug_set(2,suc1=3,suc2=4)
+    p3 = debug_set(3,suc1=4,suc2=1)
+    p4 = debug_set(4,suc1=1,suc2=2)
+    p5 = debug_set(5,known=1)
+
+    p1.p2pinit()
+
+    # initial a peer 2
+
+    p2.p2pinit()
+
+    # initial a peer 3
+    
+    p3.p2pinit()
+
+    # initial a peer 4
+    
+    p4.p2pinit()
+
+    # let peer 5 ask 1 to join
+    
+    p5.p2pjoin()
+
+

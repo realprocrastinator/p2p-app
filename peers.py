@@ -1,10 +1,12 @@
 
 from threading import Lock
+from para import *
 
 class peer(object):
     def __init__(self,id : int):
         self.my_id = id
-        self.predecessor = self.successor = {}
+        self.predecessor = {}
+        self.successor = {}
         # by receiving the ping msg
         # from my predecessor I can know who he is
         # but I need a lock to protect the shared predecessor list 
@@ -14,7 +16,7 @@ class peer(object):
     def add_suc(self,order:str,id:int):
         self.successor[order] = id
 
-    # add pre
+    # add pres
     def add_pre(self,order:str,id:int):
         self.peer_lock.acquire()
         # critical region
@@ -51,17 +53,25 @@ class peer(object):
     def get_myid(self):
         return self.my_id
 
-    # update successors
-    def suc_update(self,peer_id):
-        self.successor["second"] =  self.successor["first"]
-        self.successor["first"] = peer_id
+    # update successors of me
+    def suc_update(self,peer_id,flag = None):
+        if not flag:
+            # update the peer who has been joined
+            self.successor["second"] =  self.successor["first"]
+            self.successor["first"] = peer_id
+        elif flag == signal(header.JOIN_UPDATE):
+            # update the first predecessor's second suc
+            self.successor["second"] = peer_id
+        
 
     # 
     def print_successors(self):
-        suc1,suc2 = self.peer.successor["first"],self.peer.successor["second"]
-        print (f"My new first successor is Peer {str(suc1)}")
-        print (f"My new Second successor is Peer {str(suc2)}")
-
+        try:
+            suc1,suc2 = self.successor["first"],self.successor["second"]
+            print (f"My new first successor is Peer {str(suc1)}")
+            print (f"My new Second successor is Peer {str(suc2)}")
+        except Exception:
+            pass
     # check if I should be responsible for such file
     # if yes then lookup my local file table
     def has_file(self,file_id):
@@ -96,12 +106,14 @@ class peer(object):
 
 if __name__ == "__main__":
     
+
     # test join 
     # 1-2-3-4-5-1
     p1 = peer(1)
     p1.add_suc("first",2)
     p1.add_suc("second",3)
-    
+    p1.print_successors()
+
     p2 = peer(2)
     p2.add_suc("first",3)
     p2.add_suc("second",4)
