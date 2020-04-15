@@ -42,7 +42,6 @@ class InputHandler(Thread):
                 print("Invalid Command.")
                 continue
             elif argvs[0].lower() == "quit":
-                
                 #TODO call Quit gracefully
                 pass
             elif argvs[0].lower() == "request":
@@ -56,8 +55,7 @@ class InputHandler(Thread):
                 if (len(argvs) != 2 or not self.isvalid(argvs[1])):
                     print("Invalid Command.")
                 else:
-                    # TODO call commands[argv[0]](args[1])
-                    pass
+                    uargs()["OPTIONS"].file_store(argvs[1])
             else:
                 print("Invalid Command.")
                 continue
@@ -122,7 +120,7 @@ class EventHandler(object):
             self.workers = []
             self.workers.append(self.add_suc("first",self.peer_ids[0]))
             self.workers.append(self.add_suc("second",self.peer_ids[1])) 
-            self.print_successors()
+            # self.print_successors()
 
             # TODO start the TCP receiver to handle the request
             if not join:
@@ -140,6 +138,28 @@ class EventHandler(object):
     def print_ping_who(self,suc: list):
         suc1, suc2 = suc[0],suc[1]
         print(f"Ping requests sent to Peers {suc1} and {suc2}")
+
+
+    # wrapping func to check file location
+    def has_file(self,file_id:int):
+        return self.peer.has_file(file_id)
+
+
+    # file store
+    def file_store(self,filename: str):
+        file_id = int(filename)
+        if (self.has_file(file_id)):
+            print(f">Store {file_id} request accepted")
+        else:
+            # not store here
+            print(f"Store {file_id} request forwarded to my successor")
+            suc = self.get_suc("first")
+            InfoClient(
+                suc, signal(header.FILE_STR), file_id
+            )
+
+
+    # file retrive
 
     # function to send ping package and add successor TODO sync
     def add_suc(self,order:str,peer_id:int):
@@ -263,22 +283,46 @@ class EventHandler(object):
     
         # TODO close TCP socket
 
+    # handle suc left abruptly
+    def peer_leave(self,depart_id:int):
+        # leaving of suc
+        self.workers = [w for w in self.workers if w.suc_id != depart_id]
+        
+        # #DEBUG
+        # print(self.who(depart_id))
+        try:
+            self.peer.rem_suc(self.who(depart_id))
+            alive_suc = self.workers[0].suc_id
+        except IndexError:
+            # both sucs exited abruptly we can do nothing but exit
+            print("No suc we can connect to, waiting...")
+            
+            
+        # send to current alive suc to get a new suc
+        if self.who(alive_suc) == "first":
+            # second suc is lost
+            InfoClient(alive_suc, signal(header.PEER_LOST), depart_id, requester_id = 0).start()
+        else:
+            # first suc is lost, second will become my suc
+            self.peer.successor["first"] = alive_suc
+            InfoClient(alive_suc, signal(header.PEER_LOST), depart_id, requester_id = 1).start()
+            
+
+    # help func, first suc or second suc? 
+    def who(self,suc_id):
+        sucs = self.peer.successor
+        for k,v in sucs.items():
+            if v == suc_id:
+                return k
 
     # when got the suc exit signal then call this function to handle
     # suc's departure
     def handle_peer_quit(self, quiter_id:int,order:str,new_suc:int):
         # display who is leaving
-        print(f"Peer {quiter_id} will depart from the network")
-        
-        # help func, first suc or second suc? 
-        def who(suc_id):
-            sucs = self.peer.successor
-            for k,v in sucs.items():
-                if v == suc_id:
-                    return k
+        print(f"Peer {quiter_id} will depart from the network")     
 
         # remove the exiting suc
-        self.peer.rem_suc(who(quiter_id))
+        self.peer.rem_suc(self.who(quiter_id))
         
         # disable ping such suc
         [w.disable_ping() for w in self.workers if w.suc_id == quiter_id]

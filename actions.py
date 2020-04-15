@@ -96,20 +96,44 @@ class Actors(Thread):
                 # DEBUG
                 print("ERROR:" + "indicator:" ,indicator, byte2int(msg.body))
             handler.big_lock.release()
-            # inform predecessor finishing updating
-            # start ping service
-            # handler.p2pinit(join = True)
 
-        # peer departure    
+        # peer departure gracefully
+        elif action == signal(header.PEER_EXIT):    
+            pass
+        
+        # allow peer exit, ack back the quit signal
+        elif action == signal(header.PEER_EXIT_ACK):
+            pass
 
         # peer lost
+        elif action == signal(header.PEER_LOST):
+            loss_peer = byte2int(msg.body)
+            relationship = msg.header[1]
+            print(uargs()["OPTIONS"].peer.successor)
+            if relationship == 0:
+                # my suc is lost, send my sscu to my pre to be his ssuc
+                suc = handler.get_suc("second")
+            else:
+                # my pre is lost, I'll become my spre's suc and my suc is his ssuc
+                suc = handler.get_suc("first")
 
-        # store file 
+            # construct the message
+            reply = message()
+            sign = 2 # whatever value sent will be his second suc
+            # set an signature to indicate the relationship
+            reply.setHeader(signal(header.NEW_PEER),2)
+            reply.body = int2byte(suc)
+            self.conn.send(reply.segment)
+
+        # store file
+        elif action == signal(header.FILE_STR):
+            file_id = byte2int(msg.body)
+            uargs()["OPTIONS"].file_store()
 
         # request file
 
         # close the TCP socket, open next time when get called again
-
+        self.conn.close()
 
 
 # a TCP server listening for incoming request
@@ -149,27 +173,33 @@ class InfoClient(Thread):
         self.sock = socket(AF_INET, SOCK_STREAM)
 
     def run(self):
-        self.sock.connect((host, PORT_BASE+self.server_id))
-        msg = message()
-        msg.setHeader(self.info_type, self.requester_id)
-        msg.body = int2byte(self.info_val)
+        try:
+            self.sock.connect((host, PORT_BASE+self.server_id))
+            msg = message()
+            msg.setHeader(self.info_type, self.requester_id)
+            msg.body = int2byte(self.info_val)
 
-        # DEBUG
-        # print("sending..." + f"{msg.body}")
-        # send the message 
-        self.sock.send(msg.segment)
-        # some cases we need to wait response and do callback 
-        if self.info_type in [signal(header.PEER_LOST), signal(header.PEER_EXIT)]:
-            msg = message(self.sock.recv(1024))
-            if msg.header[0] == signal(header.PEER_EXIT_ACK):
-                # exit granted
-                # callback the controller 
-                uargs()["OPTIONS"].handle_peer_quit()
-            elif msg.header[0] == signal(header.NEW_PEER):
-                # register new peer
-                uargs()["OPTIONS"].hanlde_new_sus(
-                    byte2int(msg.body)
-                )
+            #DEBUG
+            print("sending..." + f"depart : {byte2int(msg.body)}")
+            # send the message 
+            self.sock.send(msg.segment)
+            # some cases we need to wait response and do callback 
+            if self.info_type in [signal(header.PEER_LOST), signal(header.PEER_EXIT)]:
+                msg = message(self.sock.recv(1024))
+                if msg.header[0] == signal(header.PEER_EXIT_ACK):
+                    # exit granted
+                    # callback the controller 
+                    uargs()["OPTIONS"].handle_peer_quit()
+                elif msg.header[0] == signal(header.NEW_PEER):
+                    # register new peer
+                    # DEBUG
+                    print("Assigning new suc.....")
+                    uargs()["OPTIONS"].handle_new_suc(
+                        "second",byte2int(msg.body)
+                    )
+        except ConnectionRefusedError:
+            # if the suc is not online we just try again
+            pass
 
         # close the connection
         self.sock.close()

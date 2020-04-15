@@ -91,7 +91,7 @@ class pingSender(Thread):
         
         # each timeout will reduce the rivival chance by 1, 
         # suc viewed as dead if reaches 0
-        self.revival_chance = 3
+        self.revival_chance = 30
 
         # create UDP socket and set timeout 
         self.sock = socket(AF_INET,SOCK_DGRAM)
@@ -110,13 +110,18 @@ class pingSender(Thread):
             # just for DEBUGGING
             self.__MYID = 3
 
+        # exit?
+        self.__exit = False
+
     def change_suc(self,new_suc):
         self.suc_id = new_suc
 
     def sendPing(self,chance:int):
         if chance == 0:
-            #TODO suc died, call update()
-            print(f"peer{self.suc_id} is lost, updating successors...")
+            #TODO suc died, call peer_leave() to handle
+            print(f"peer{self.suc_id} is no longer alive")
+            uargs()["OPTIONS"].peer_leave(self.suc_id)
+            self.__stop = True
         elif self.__stop:
             # at thi smoment I'm updatding my successsors dont send ping until I enable it again
             pass 
@@ -161,13 +166,16 @@ class pingSender(Thread):
     def enable_ping(self):
         self.__stop = False   
 
+    def exit(self):
+        self.__exit = True
+
     def run(self):
         # TODO is that enough?
         self.__stop = False
         # actually the periodically sending ping request
         # can be done in a higher level
         while True:
-            self.sendPing(3)
+            self.sendPing(4)
 
 
 

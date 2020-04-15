@@ -18,10 +18,8 @@ class peer(object):
 
     # add pres
     def add_pre(self,order:str,id:int):
-        self.peer_lock.acquire()
         # critical region
         self.predecessor[order] = id
-        self.peer_lock.release()
 
     # rem suc order is first or second
     def rem_suc(self,order:str):
