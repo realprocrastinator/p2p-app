@@ -43,7 +43,7 @@ class InputHandler(Thread):
                 continue
             elif argvs[0].lower() == "quit":
                 #TODO call Quit gracefully
-                pass
+                uargs()["OPTIONS"].peer_quit()
             elif argvs[0].lower() == "request":
                 if (len(argvs) != 2 or not self.isvalid(argvs[1])):
                     print("Invalid Command.")
@@ -265,10 +265,24 @@ class EventHandler(object):
             w.disable_ping()
         
         # close the udp socket
-        close(self.pingrcvr.sock)
+        self.pingrcvr.sock.close()
 
-        # TODO notice my predecessors 
+        # notice my predecessors 
         # tell them to update their successors
+        # tell my pre to update his suc as my suc ,his ssuc as my ssuc
+        # requester id is 0 indicating body will be his suc, 1 -> ssuc
+        InfoClient(
+            self.peer.get_pre("first"), signal(header.PEER_EXIT), self.peer.get_suc("first"), requester_id = 0
+        ).start()
+        InfoClient(
+            self.peer.get_pre("first"), signal(header.PEER_EXIT), self.peer.get_suc("second"), requester_id = 1
+        ).start()
+
+        # tell my second pre to update his ssuc to my suc
+        InfoClient(
+            self.peer.get_pre("second"), signal(header.PEER_EXIT), self.peer.get_suc("first"), requester_id = 2
+        ).start()
+
 
     # this function is thread safe
     def quit_allow(self):
@@ -336,6 +350,8 @@ class EventHandler(object):
     # add a new worker for ping new suc
     def handle_new_suc(self,order:str,new_suc:int):
         self.workers.append(self.add_suc(order,new_suc))
+        # this wrapping func is ERROR free, if at this moment 2 sucs are not ready
+        # we will try next time (exception handled by lower level )
         self.print_successors()
 
 

@@ -99,11 +99,36 @@ class Actors(Thread):
 
         # peer departure gracefully
         elif action == signal(header.PEER_EXIT):    
-            pass
-        
-        # allow peer exit, ack back the quit signal
-        elif action == signal(header.PEER_EXIT_ACK):
-            pass
+            # at this moment we can be a pre or spre
+            # we call handle_peer_exit() to handle this event
+            
+            suc = uargs()["OPTIONS"].get_suc("first")
+            ssuc = uargs()["OPTIONS"].get_suc("second")
+            
+            if msg.header[1] == 0: 
+                print(f"Peer {suc} will depart from the network")
+                # pre, add suc
+                uargs()["OPTIONS"].handle_peer_quit(
+                    suc,"first",byte2int(msg.body)
+                )
+            elif msg.header[1] == 1:
+                # pre, add ssuc
+                uargs()["OPTIONS"].handle_peer_quit(
+                    suc,"second",byte2int(msg.body)
+                )
+            elif msg.header[1] == 2:
+                # spre, add ssuc
+                print(f"Peer {ssuc} will depart from the network")
+                uargs()["OPTIONS"].handle_peer_quit(
+                    ssuc,"second",byte2int(msg.body)
+                )
+            else:
+                print("ERROR: invalid signature")
+
+            # return the ack 
+            reply = message()
+            reply.setHeader(signal(header.PEER_EXIT_ACK), 0)
+            self.conn.send(reply.segment)
 
         # peer lost
         elif action == signal(header.PEER_LOST):
@@ -189,7 +214,7 @@ class InfoClient(Thread):
                 if msg.header[0] == signal(header.PEER_EXIT_ACK):
                     # exit granted
                     # callback the controller 
-                    uargs()["OPTIONS"].handle_peer_quit()
+                    uargs()["OPTIONS"].quit_allow()
                 elif msg.header[0] == signal(header.NEW_PEER):
                     # register new peer
                     # DEBUG
