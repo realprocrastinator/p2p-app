@@ -49,8 +49,7 @@ class InputHandler(Thread):
                     print("Invalid Command.")
                     continue
                 else:
-                    # TODO call commands[argv[0]](args[1])
-                    pass
+                    uargs()["OPTIONS"].request_file(int(argvs[1]))
             elif argvs[0].lower() == "store":
                 if (len(argvs) != 2 or not self.isvalid(argvs[1])):
                     print("Invalid Command.")
@@ -81,6 +80,9 @@ class EventHandler(object):
         self.no_ping = no_ping
         self.peer_ids = peer_ids
 
+        # file attribute
+        self.file = None
+        self.file_id = None
 
     # p2pjoin()
     def p2pjoin(self):
@@ -353,6 +355,63 @@ class EventHandler(object):
         # this wrapping func is ERROR free, if at this moment 2 sucs are not ready
         # we will try next time (exception handled by lower level )
         self.print_successors()
+
+
+    def handle_file_request (self, requester_id:int, file_id:int):
+        # arg file_id should be a 4 digits str
+        filename = str(file_id).zfill(4)
+        if self.peer.has_file(file_id):
+            # prompt
+            print("File "+str(file_id)+" is stored here.")
+
+            # send to the recevier to open the port 
+            InfoClient(requester_id, signal(header.FILE_RES), file_id).start()
+
+            # TODO startup the file tr move to TCP start when buffer ready 
+            FileSender("FileSender", requester_id, filename +".pdf").start()
+        else: 
+            # print File not here promet
+            print(f"Request for File {str(file_id)} has been received, but the file is not stored here")
+            InfoClient(
+                self.peer.get_suc("first"), signal(header.FILE_REQ) , file_id, requester_id
+            ).start()
+
+
+
+    def handle_file_waiting(self,from_id:int, file_id:int):
+        self.file_id = file_id
+        filename = str(file_id).zfill(4)
+        print(f"Peer {from_id} had File {filename}")
+        print(f"Receiving File {filename} from Peer {from_id}")
+        # TODO wait for the file, start the fileReceiver server
+        # tell the server to prepare a file income
+        self.file = open(
+            "received_"+ filename +".pdf",
+            'ab+'
+        )
+
+    def receive_file(self,msg: message):
+        size = msg.get_bodySize()
+        self.file.write(msg.body)
+        if size != parameters()["MSG_SIZE"]:
+            self.file.close()
+            filename = str(self.file_id).zfill(4)
+            print(f"The file {filename} received.")
+
+
+    def request_file(self, file_id:int):
+        filename = str(self.file_id).zfill(4)
+        if self.peer.has_file(file_id):
+            print(f"File {filename} is stored here ")
+            return
+        # other wise forward the msh
+        print(
+            f"File request for {filename} has been sent to my successor"
+        )
+        # send to the recevier to open the port 
+        InfoClient(
+            self.peer.get_suc("first"), signal(header.FILE_REQ), file_id, self.my_id
+        ).start()
 
 
 def main():

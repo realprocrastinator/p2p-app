@@ -27,6 +27,8 @@ class Actors(Thread):
         self.addr = addr
         # DEBUG
         self.id = t_name
+        # for receiving file
+        self.file = None
 
     def run(self):
         # get the msg from buffer
@@ -156,7 +158,20 @@ class Actors(Thread):
             uargs()["OPTIONS"].file_store()
 
         # request file
+        elif action == signal(header.FILE_REQ):
+            file_id = byte2int(msg.body)
+            requester_id = msg.header[1]
+            uargs()["OPTIONS"].handle_file_request (requester_id, file_id)
 
+        # got file response
+        elif action == signal(header.FILE_RES):
+            # I can start listening to the file 
+            uargs()["OPTIONS"].handle_file_waiting(msg.header[1], byte2int(msg.body))
+        
+        # start receiving file
+        elif action == signal(header.SND_FILE):
+            uargs()["OPTIONS"].receive_file(msg)
+        
         # close the TCP socket, open next time when get called again
         self.conn.close()
 
@@ -228,6 +243,77 @@ class InfoClient(Thread):
 
         # close the connection
         self.sock.close()
+
+
+# File munipulator
+# TODO
+# a file sender
+class FileSender(Thread):
+    def __init__(self,t_name,peer_id, filename):
+        Thread.__init__(self,name = t_name)
+        
+        # set up port, file_name 
+        self.requester_port = peer_id + PORT_BASE
+        self.filename = filename
+        # set up buffer size
+        self.size = parameters()["MSG_SIZE"]
+        # try open the file if not exsist, then send message file not exsist
+        try:
+            self.file = open(filename,'rb')
+        except FileNotFoundError:
+            # TODO send Error msg
+            pass
+         
+        # store the requestor id for later usage
+        self.requester_id = peer_id
+        # set up socket for TCP
+        self.sock = socket(AF_INET,SOCK_STREAM)
+        # set up timeout
+        self.sock.settimeout(1)
+        # connect TCP, established handshake
+        self.sock.connect((host, self.requester_port))
+        # set up ack#
+        self.ack = 0
+
+    def sendfile(self, buf):
+        # construct the msg
+        msg = message()
+        # send the byte stream
+        msg.setHeader(signal(header.SND_FILE),self.ack)
+        # try to recieve the response, if timeout, send again
+        msg.body = buf
+
+        # send the file stream
+        self.sock.sendto(
+            msg.segment,
+            (host,self.requester_port)
+        )
+    
+    def run(self):
+        # read the file to the buf
+        buf = self.file.read(self.size)
+        print("We now start sending the file...")
+        # sleep(1)
+
+        sent_length = 0
+        # send the whole file
+        
+        while buf:
+            self.sendfile(buf)
+            sent_length = len(buf)
+
+            buf = self.file.read(self.size)
+        
+        # edge case, if the file size % buffer size == 0
+        # we send an extra empty msg to notify thats the end of the file
+        if sent_length == self.size:
+            self.sent(buf)
+
+        # sending over
+        print("File is sent....")
+            
+
+
 
 if __name__ == "__main__":
     # test TCP info client and Rceiver

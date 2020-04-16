@@ -18,6 +18,7 @@ class header(Enum):
     PEER_JOIN = 12
     JOIN_UPDATE = 13
     JOIN_ALLOWED = 14
+    FILE_RES= 15
 
 def signal(x:Enum):
     return x.value
