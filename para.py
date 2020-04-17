@@ -4,10 +4,10 @@ from enum import Enum, unique
 class header(Enum):
     ACK_PING = 0
     SND_PING = 1
-    REQ_FILE = 2
+    FILE_ACK = 2
     SND_FILE = 3
     FILE_STR = 4
-    FILE_ACK = 5
+    FILE_RDY = 5
     FILE_REQ = 6
     FILE_RCV = 7
     NEW_PEER = 8

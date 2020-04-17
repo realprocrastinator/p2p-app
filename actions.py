@@ -171,6 +171,15 @@ class Actors(Thread):
         # start receiving file
         elif action == signal(header.SND_FILE):
             uargs()["OPTIONS"].receive_file(msg)
+
+        # I know peer is ready to accept my file
+        elif action == signal(header.FILE_RDY):
+            requester_id = msg.header[1]
+            # add leading zeros eg 4->0004
+            filename = str(byte2int(msg.body)).zfill(4)
+            # startup the file tr move to TCP start when buffer ready 
+            FileSender("FileSender", requester_id, filename +".pdf").start()
+
         
         # close the TCP socket, open next time when get called again
         self.conn.close()
@@ -220,7 +229,7 @@ class InfoClient(Thread):
             msg.body = int2byte(self.info_val)
 
             #DEBUG
-            print("sending..." + f"depart : {byte2int(msg.body)}")
+            # print("sending..." + f"depart : {byte2int(msg.body)}")
             # send the message 
             self.sock.send(msg.segment)
             # some cases we need to wait response and do callback 

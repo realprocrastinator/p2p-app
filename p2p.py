@@ -368,7 +368,7 @@ class EventHandler(object):
             InfoClient(requester_id, signal(header.FILE_RES), file_id).start()
 
             # TODO startup the file tr move to TCP start when buffer ready 
-            FileSender("FileSender", requester_id, filename +".pdf").start()
+            # FileSender("FileSender", requester_id, filename +".pdf").start()
         else: 
             # print File not here promet
             print(f"Request for File {str(file_id)} has been received, but the file is not stored here")
@@ -387,8 +387,10 @@ class EventHandler(object):
         # tell the server to prepare a file income
         self.file = open(
             "received_"+ filename +".pdf",
-            'ab+'
+            'ab'
         )
+        # send a msg to tell peer I;m ready to accept file
+        InfoClient(from_id, signal(header.FILE_RDY), file_id).start()
 
     def receive_file(self,msg: message):
         size = msg.get_bodySize()
